@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>RAG Chatbot with TTS</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/react@18.2.0/umd/react.development.js"></script>
@@ -25,7 +25,14 @@
             const [isLoading, setIsLoading] = useState(false);
             const [isPlayingTTS, setIsPlayingTTS] = useState(false);
             const audioRef = useRef(null);
+            const messagesEndRef = useRef(null);
 
+            // Auto-scroll to latest message
+            useEffect(() => {
+                messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+            }, [messages]);
+
+            // Microphone permission check
             useEffect(() => {
                 navigator.mediaDevices.getUserMedia({ audio: true })
                     .then(stream => {
@@ -171,79 +178,100 @@
 
             if (!isUserIdSet) {
                 return (
-                    <div className="max-w-md mx-auto p-4 mt-10">
-                        <h1 className="text-2xl font-bold mb-4">Welcome to RAG Chatbot</h1>
-                        <div className="bg-white rounded-lg shadow-md p-4">
+                    <main className="flex min-h-screen items-center justify-center p-4">
+                        <section className="w-full max-w-sm sm:max-w-md bg-white rounded-xl shadow-lg p-6">
+                            <h1 className="text-xl sm:text-2xl font-bold mb-6 text-center text-gray-800">Welcome to RAG Chatbot</h1>
                             <input
                                 type="text"
                                 value={userId}
                                 onChange={(e) => setUserId(e.target.value)}
                                 placeholder="May I have your name?"
-                                className="w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 mb-4"
+                                className="w-full p-3 text-sm sm:text-base border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 mb-4"
+                                aria-label="User ID input"
                             />
                             <button
                                 onClick={handleSetUserId}
-                                className="w-full p-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600"
+                                className="w-full p-3 text-sm sm:text-base bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
+                                aria-label="Start chat"
                             >
                                 Start Chat
                             </button>
-                        </div>
-                    </div>
+                        </section>
+                    </main>
                 );
             }
 
             return (
-                <div className="max-w-2xl mx-auto p-4">
-                    <h1 className="text-2xl font-bold mb-4">RAG Chatbot with TTS (User: {userId})</h1>
-                    <div className="bg-white rounded-lg shadow-md p-4 h-[70vh] overflow-y-auto mb-4">
-                        {messages.map((msg, index) => (
-                            <div key={index} className={`mb-2 ${msg.type === 'user' ? 'text-right' : 'text-left'}`}>
-                                <span className={`inline-block p-2 rounded-lg ${msg.type === 'user' ? 'bg-blue-500 text-white' : 'bg-gray-200'}`}>
-                                    {msg.text}
-                                </span>
+                <main className="flex flex-col min-h-screen p-4">
+                    <section className="w-full sm:max-w-lg md:max-w-2xl mx-auto flex-1 flex flex-col">
+                        <h1 className="text-lg sm:text-xl md:text-2xl font-bold mb-4 text-gray-800">RAG Chatbot with TTS (User: {userId})</h1>
+                        <div className="bg-white rounded-xl shadow-lg p-4 mb-4 flex-1 overflow-y-auto max-h-[calc(100vh-160px)] sm:max-h-[calc(100vh-140px)]">
+                            {messages.map((msg, index) => (
+                                <div key={index} className={`mb-3 flex ${msg.type === 'user' ? 'justify-end' : 'justify-start'}`}>
+                                    <span className={`inline-block p-2 sm:p-3 rounded-lg text-sm sm:text-base max-w-[80%] ${msg.type === 'user' ? 'bg-blue-500 text-white' : 'bg-gray-200 text-gray-800'}`}>
+                                        {msg.text}
+                                    </span>
+                                </div>
+                            ))}
+                            {isLoading && (
+                                <div className="flex justify-center">
+                                    <span className="inline-block p-2 rounded-lg bg-gray-200 text-sm sm:text-base text-gray-600">Loading...</span>
+                                </div>
+                            )}
+                            <div ref={messagesEndRef} />
+                        </div>
+                        <div className="fixed bottom-0 left-0 right-0 p-4 bg-gray-100 sm:static sm:bg-transparent sm:p-0">
+                            <div className="flex items-center space-x-2 w-full sm:max-w-lg md:max-w-2xl mx-auto">
+                                <input
+                                    type="text"
+                                    value={input}
+                                    onChange={(e) => setInput(e.target.value)}
+                                    placeholder="Type your query..."
+                                    className="flex-1 p-3 text-sm sm:text-base border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100"
+                                    disabled={isRecording}
+                                    aria-label="Query input"
+                                />
+                                <button
+                                    onClick={handleTextQuery}
+                                    className="p-3 min-w-[48px] bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:bg-gray-400 transition-colors"
+                                    disabled={isRecording || isLoading}
+                                    aria-label="Send query"
+                                >
+                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                                    </svg>
+                                </button>
+                                <button
+                                    onClick={handleVoiceQuery}
+                                    className={`p-3 min-w-[48px] rounded-full ${isRecording ? 'bg-red-500' : 'bg-green-500'} text-white hover:${isRecording ? 'bg-red-600' : 'bg-green-600'} disabled:bg-gray-400 transition-colors`}
+                                    disabled={isLoading || !hasMicPermission}
+                                    aria-label={isRecording ? 'Stop recording' : 'Start recording'}
+                                >
+                                    <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                                        {isRecording ? (
+                                            <path d="M6 6h12v12H6z" />
+                                        ) : (
+                                            <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5-3c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.47 6 6.93V22h2v-3.07c3.39-.46 6-3.4 6-6.93h-2z" />
+                                        )}
+                                    </svg>
+                                </button>
+                                <button
+                                    onClick={stopTTS}
+                                    className="p-3 min-w-[48px] bg-yellow-500 text-white rounded-lg hover:bg-yellow-600 disabled:bg-gray-400 transition-colors"
+                                    disabled={!isPlayingTTS}
+                                    aria-label="Stop speaking"
+                                >
+                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                    </svg>
+                                </button>
                             </div>
-                        ))}
-                        {isLoading && (
-                            <div className="text-center">
-                                <span className="inline-block p-2 rounded-lg bg-gray-200">Loading...</span>
-                            </div>
-                        )}
-                    </div>
-                    <div className="flex items-center space-x-2">
-                        <input
-                            type="text"
-                            value={input}
-                            onChange={(e) => setInput(e.target.value)}
-                            placeholder="Type your query..."
-                            className="flex-1 p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                            disabled={isRecording}
-                        />
-                        <button
-                            onClick={handleTextQuery}
-                            className="p-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:bg-gray-400"
-                            disabled={isRecording || isLoading}
-                        >
-                            Send
-                        </button>
-                        <button
-                            onClick={handleVoiceQuery}
-                            className={`p-2 rounded-lg ${isRecording ? 'bg-red-500' : 'bg-green-500'} text-white hover:${isRecording ? 'bg-red-600' : 'bg-green-600'} disabled:bg-gray-400`}
-                            disabled={isLoading || !hasMicPermission}
-                        >
-                            {isRecording ? 'Stop' : 'Mic'}
-                        </button>
-                        <button
-                            onClick={stopTTS}
-                            className="p-2 bg-yellow-500 text-white rounded-lg hover:bg-yellow-600 disabled:bg-gray-400"
-                            disabled={!isPlayingTTS}
-                        >
-                            Stop Speaking
-                        </button>
-                    </div>
-                    {!hasMicPermission && (
-                        <p className="text-red-500 mt-2">Microphone permission is required for voice input.</p>
-                    )}
-                </div>
+                            {!hasMicPermission && (
+                                <p className="text-red-500 text-sm mt-2 text-center w-full sm:max-w-lg md:max-w-2xl mx-auto">Microphone permission is required for voice input.</p>
+                            )}
+                        </div>
+                    </section>
+                </main>
             );
         };
 

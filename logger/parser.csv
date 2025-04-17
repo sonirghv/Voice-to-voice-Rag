@@ -1,3 +1,3 @@
 document_id,filename,file_path,success,page_count,text_length,chunk_count,embedding_count,processing_time,memory_impact,error
-54f5196fb44e5688,Lifestyles_climate.pdf,./pdfs/Lifestyles_climate.pdf,True,19,50985,19,19,1.8545253276824951,8.85546875,
-2c596e7e2ac88bee,lifestyle-for-environment.pdf,./pdfs/lifestyle-for-environment.pdf,True,14,24825,8,8,0.6994419097900391,2.0,
+54f5196fb44e5688,Lifestyles_climate.pdf,./pdfs/Lifestyles_climate.pdf,True,19,50985,19,19,1.641099452972412,9.08984375,
+2c596e7e2ac88bee,lifestyle-for-environment.pdf,./pdfs/lifestyle-for-environment.pdf,True,14,24825,8,8,0.6200799942016602,2.0,
