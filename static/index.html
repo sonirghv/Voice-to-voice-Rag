@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RAG Chatbot with TTS</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/react@18.2.0/umd/react.development.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/react-dom@18.2.0/umd/react-dom.development.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@babel/standalone@7.22.5/babel.min.js"></script>
+</head>
+<body class="bg-gray-100 font-sans">
+    <div id="root"></div>
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+
+        const Chatbot = () => {
+            const [userId, setUserId] = useState('');
+            const [isUserIdSet, setIsUserIdSet] = useState(false);
+            const [messages, setMessages] = useState([]);
+            const [input, setInput] = useState('');
+            const [isRecording, setIsRecording] = useState(false);
+            const [mediaRecorder, setMediaRecorder] = useState(null);
+            const [hasMicPermission, setHasMicPermission] = useState(false);
+            const [isLoading, setIsLoading] = useState(false);
+            const [isPlayingTTS, setIsPlayingTTS] = useState(false);
+            const audioRef = useRef(null);
+
+            useEffect(() => {
+                navigator.mediaDevices.getUserMedia({ audio: true })
+                    .then(stream => {
+                        setHasMicPermission(true);
+                        stream.getTracks().forEach(track => track.stop());
+                    })
+                    .catch(err => {
+                        console.error('Microphone permission denied:', err);
+                        setHasMicPermission(false);
+                    });
+                return () => {
+                    stopTTS();
+                };
+            }, []);
+
+            const stopTTS = () => {
+                if (audioRef.current) {
+                    audioRef.current.pause();
+                    audioRef.current.src = '';
+                    audioRef.current = null;
+                    setIsPlayingTTS(false);
+                }
+            };
+
+            const playTTS = (base64Audio) => {
+                try {
+                    const audioData = atob(base64Audio);
+                    const arrayBuffer = new ArrayBuffer(audioData.length);
+                    const view = new Uint8Array(arrayBuffer);
+                    for (let i = 0; i < audioData.length; i++) {
+                        view[i] = audioData.charCodeAt(i);
+                    }
+                    const blob = new Blob([arrayBuffer], { type: 'audio/mp3' });
+                    const audioUrl = URL.createObjectURL(blob);
+                    audioRef.current = new Audio(audioUrl);
+                    audioRef.current.play();
+                    setIsPlayingTTS(true);
+                    audioRef.current.onended = () => {
+                        setIsPlayingTTS(false);
+                        URL.revokeObjectURL(audioUrl);
+                    };
+                } catch (error) {
+                    console.error('TTS playback error:', error);
+                    setMessages(prev => [...prev, { type: 'bot', text: `TTS playback error: ${error.message}` }]);
+                }
+            };
+
+            const handleSetUserId = (e) => {
+                e.preventDefault();
+                if (userId.trim()) {
+                    setIsUserIdSet(true);
+                }
+            };
+
+            const handleTextQuery = async (e) => {
+                e.preventDefault();
+                if (!input.trim()) return;
+
+                stopTTS();
+                const userMessage = { type: 'user', text: input };
+                setMessages(prev => [...prev, userMessage]);
+                setInput('');
+                setIsLoading(true);
+
+                try {
+                    const response = await fetch('/query/text', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ query: input, user_id: userId })
+                    });
+                    const data = await response.json();
+                    const botMessage = { type: 'bot', text: data.answer };
+                    setMessages(prev => [...prev, botMessage]);
+                    if (!data.answer.startsWith('Error') && data.tts_audio) {
+                        playTTS(data.tts_audio);
+                    }
+                } catch (error) {
+                    const errorMessage = { type: 'bot', text: `Error: ${error.message}` };
+                    setMessages(prev => [...prev, errorMessage]);
+                } finally {
+                    setIsLoading(false);
+                }
+            };
+
+            const handleVoiceQuery = async () => {
+                if (!hasMicPermission) {
+                    alert('Microphone permission is required for voice input.');
+                    return;
+                }
+
+                if (!isRecording) {
+                    try {
+                        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                        const recorder = new MediaRecorder(stream, {
+                            mimeType: 'audio/webm;codecs=opus',
+                            timeslice: 100
+                        });
+                        const chunks = [];
+
+                        recorder.ondataavailable = e => chunks.push(e.data);
+                        recorder.onstop = async () => {
+                            const blob = new Blob(chunks, { type: 'audio/webm' });
+                            const formData = new FormData();
+                            formData.append('file', blob, 'audio.webm');
+                            formData.append('user_id', userId);
+
+                            stopTTS();
+                            setIsLoading(true);
+                            try {
+                                const response = await fetch('/query/voice', {
+                                    method: 'POST',
+                                    body: formData
+                                });
+                                const data = await response.json();
+                                const userMessage = { type: 'user', text: data.transcription || 'Voice input' };
+                                const botMessage = { type: 'bot', text: data.answer };
+                                setMessages(prev => [...prev, userMessage, botMessage]);
+                                if (!data.answer.startsWith('Error') && data.tts_audio) {
+                                    playTTS(data.tts_audio);
+                                }
+                            } catch (error) {
+                                const errorMessage = { type: 'bot', text: `Error: ${error.message}` };
+                                setMessages(prev => [...prev, errorMessage]);
+                            } finally {
+                                setIsLoading(false);
+                            }
+                            stream.getTracks().forEach(track => track.stop());
+                        };
+
+                        recorder.start(100);
+                        setMediaRecorder(recorder);
+                        setIsRecording(true);
+                    } catch (error) {
+                        console.error('Error accessing microphone:', error);
+                        setMessages(prev => [...prev, { type: 'bot', text: `Error accessing microphone: ${error.message}` }]);
+                    }
+                } else {
+                    mediaRecorder.stop();
+                    setIsRecording(false);
+                    setMediaRecorder(null);
+                }
+            };
+
+            if (!isUserIdSet) {
+                return (
+                    <div className="max-w-md mx-auto p-4 mt-10">
+                        <h1 className="text-2xl font-bold mb-4">Welcome to RAG Chatbot</h1>
+                        <div className="bg-white rounded-lg shadow-md p-4">
+                            <input
+                                type="text"
+                                value={userId}
+                                onChange={(e) => setUserId(e.target.value)}
+                                placeholder="May I have your name?"
+                                className="w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 mb-4"
+                            />
+                            <button
+                                onClick={handleSetUserId}
+                                className="w-full p-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600"
+                            >
+                                Start Chat
+                            </button>
+                        </div>
+                    </div>
+                );
+            }
+
+            return (
+                <div className="max-w-2xl mx-auto p-4">
+                    <h1 className="text-2xl font-bold mb-4">RAG Chatbot with TTS (User: {userId})</h1>
+                    <div className="bg-white rounded-lg shadow-md p-4 h-[70vh] overflow-y-auto mb-4">
+                        {messages.map((msg, index) => (
+                            <div key={index} className={`mb-2 ${msg.type === 'user' ? 'text-right' : 'text-left'}`}>
+                                <span className={`inline-block p-2 rounded-lg ${msg.type === 'user' ? 'bg-blue-500 text-white' : 'bg-gray-200'}`}>
+                                    {msg.text}
+                                </span>
+                            </div>
+                        ))}
+                        {isLoading && (
+                            <div className="text-center">
+                                <span className="inline-block p-2 rounded-lg bg-gray-200">Loading...</span>
+                            </div>
+                        )}
+                    </div>
+                    <div className="flex items-center space-x-2">
+                        <input
+                            type="text"
+                            value={input}
+                            onChange={(e) => setInput(e.target.value)}
+                            placeholder="Type your query..."
+                            className="flex-1 p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            disabled={isRecording}
+                        />
+                        <button
+                            onClick={handleTextQuery}
+                            className="p-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:bg-gray-400"
+                            disabled={isRecording || isLoading}
+                        >
+                            Send
+                        </button>
+                        <button
+                            onClick={handleVoiceQuery}
+                            className={`p-2 rounded-lg ${isRecording ? 'bg-red-500' : 'bg-green-500'} text-white hover:${isRecording ? 'bg-red-600' : 'bg-green-600'} disabled:bg-gray-400`}
+                            disabled={isLoading || !hasMicPermission}
+                        >
+                            {isRecording ? 'Stop' : 'Mic'}
+                        </button>
+                        <button
+                            onClick={stopTTS}
+                            className="p-2 bg-yellow-500 text-white rounded-lg hover:bg-yellow-600 disabled:bg-gray-400"
+                            disabled={!isPlayingTTS}
+                        >
+                            Stop Speaking
+                        </button>
+                    </div>
+                    {!hasMicPermission && (
+                        <p className="text-red-500 mt-2">Microphone permission is required for voice input.</p>
+                    )}
+                </div>
+            );
+        };
+
+        ReactDOM.render(<Chatbot />, document.getElementById('root'));
+    </script>
+</body>
+</html>
